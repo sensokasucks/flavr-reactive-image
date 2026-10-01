@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reactive Avatar</title>
+  <link rel="stylesheet" href="avatar.css" />
+</head>
+<body>
+  <div id="stage">
+    <img id="imgA" class="layer" alt="" draggable="false" />
+    <img id="imgB" class="layer" alt="" draggable="false" />
+  </div>
+
+  <div id="hud" class="hud hidden">
+    <div class="hud-row">
+      <span class="hud-label">Trigger</span>
+      <span id="hudTier" class="hud-value tier-idle">idle</span>
+    </div>
+    <div class="hud-meter">
+      <div id="hudBar"></div>
+      <div class="hud-mark" id="hudMarkSpeak"></div>
+      <div class="hud-mark loud" id="hudMarkLoud"></div>
+    </div>
+    <div class="hud-row sub">
+      <span id="hudVol">0%</span>
+      <span id="hudDetail">—</span>
+    </div>
+  </div>
+
+  <button id="btnSettings" title="Open settings (Ctrl+,)">⚙</button>
+  <script src="avatar.js"></script>
+</body>
+</html>

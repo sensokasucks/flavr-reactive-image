@@ -1,0 +1,11 @@
+{
+  "name": "fridge-reactive-image-legacy",
+  "version": "2.1.0",
+  "description": "Standalone audio-reactive avatar for XSplit / OBS – no Electron required",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {}
+}

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reactive Image – Settings</title>
+  <link rel="stylesheet" href="settings.css?v=3" />
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Reactive Image</h1>
+      <p class="sub">Capture the <strong>Avatar</strong> app window in XSplit (Window Capture)</p>
+    </header>
+
+    <section class="card debug-card">
+      <h2>Live state</h2>
+      <div class="debug-grid">
+        <div>
+          <div class="dbg-label">Trigger</div>
+          <div id="dbgTier" class="dbg-tier tier-idle">idle</div>
+        </div>
+        <div>
+          <div class="dbg-label">Image key</div>
+          <div id="dbgKey" class="dbg-mono">—</div>
+        </div>
+        <div>
+          <div class="dbg-label">Level</div>
+          <div id="dbgVol" class="dbg-mono">0%</div>
+        </div>
+        <div>
+          <div class="dbg-label">Flags</div>
+          <div id="dbgFlags" class="dbg-mono">—</div>
+        </div>
+      </div>
+      <div class="meter-wrap">
+        <div class="meter">
+          <div class="meter-marks">
+            <div class="mark" id="markSpeak"></div>
+            <div class="mark loud" id="markLoud"></div>
+          </div>
+          <div id="levelBar"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>1. Images</h2>
+      <div class="slots" id="slots">
+        <!-- filled by JS so file inputs are always wired correctly -->
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2. Audio</h2>
+      <div class="row">
+        <label for="deviceSelect">Input device</label>
+        <select id="deviceSelect"><option value="default">Default microphone</option></select>
+        <button type="button" id="btnRefreshDevices" class="btn-secondary">Refresh</button>
+      </div>
+      <div class="row">
+        <label for="threshold">Speaking threshold <span id="threshVal">18</span>%</label>
+        <input type="range" id="threshold" min="1" max="70" value="18" />
+      </div>
+      <div class="row">
+        <label for="loudThreshold">Loud threshold <span id="loudVal">45</span>%</label>
+        <input type="range" id="loudThreshold" min="5" max="90" value="45" />
+      </div>
+      <div class="row">
+        <label for="smoothing">Smoothing <span id="smoothVal">0.55</span></label>
+        <input type="range" id="smoothing" min="0" max="0.95" step="0.05" value="0.55" />
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>3. Effects</h2>
+      <div class="grid2">
+        <label class="check"><input type="checkbox" id="bounce" checked /> Bounce on speak</label>
+        <label class="check"><input type="checkbox" id="bounceScaleWithVolume" checked /> Scale bounce with volume</label>
+        <label class="check"><input type="checkbox" id="liveIntensity" checked /> Live intensity motion</label>
+        <label class="check"><input type="checkbox" id="dimIdle" checked /> Dim when idle</label>
+        <label class="check"><input type="checkbox" id="blinkEnabled" checked /> Auto blink</label>
+        <label class="check"><input type="checkbox" id="forceMuted" /> Force muted</label>
+        <label class="check"><input type="checkbox" id="showDebugHud" checked /> Debug HUD on avatar</label>
+      </div>
+      <div class="row">
+        <label for="bounceStrength">Bounce @ threshold <span id="bounceVal">12</span>px</label>
+        <input type="range" id="bounceStrength" min="0" max="40" value="12" />
+      </div>
+      <div class="row">
+        <label for="bounceStrengthMax">Bounce max (loud) <span id="bounceMaxVal">28</span>px</label>
+        <input type="range" id="bounceStrengthMax" min="0" max="60" value="28" />
+      </div>
+      <div class="row">
+        <label for="liveIntensityMax">Live intensity max <span id="liveMaxVal">8</span>px</label>
+        <input type="range" id="liveIntensityMax" min="0" max="24" value="8" />
+      </div>
+      <div class="row">
+        <label for="crossfade">Crossfade <span id="fadeVal">120</span>ms</label>
+        <input type="range" id="crossfade" min="0" max="400" step="20" value="120" />
+      </div>
+      <div class="row">
+        <label for="dimOpacity">Idle dim opacity <span id="dimVal">0.72</span></label>
+        <input type="range" id="dimOpacity" min="0.2" max="1" step="0.02" value="0.72" />
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4. Display</h2>
+      <div class="row">
+        <label for="bgColor">Background color <span class="hint">(chroma key friendly)</span></label>
+        <div class="color-row">
+          <input type="color" id="bgColor" value="#00FF00" />
+          <input type="text" id="bgColorText" value="#00FF00" maxlength="9" />
+          <button type="button" class="btn-secondary swatch" data-bg="#00FF00">G</button>
+          <button type="button" class="btn-secondary swatch" data-bg="#FF00FF">M</button>
+          <button type="button" class="btn-secondary swatch" data-bg="#000000">B</button>
+          <button type="button" class="btn-secondary swatch" data-bg="#0000FF">Bl</button>
+        </div>
+      </div>
+      <div class="row">
+        <label for="maxWidth">Avatar max width (px)</label>
+        <input type="number" id="maxWidth" min="64" max="1920" value="480" />
+      </div>
+      <div class="row">
+        <label for="maxHeight">Avatar max height (px)</label>
+        <input type="number" id="maxHeight" min="64" max="1080" value="480" />
+      </div>
+    </section>
+
+    <section class="card actions">
+      <button type="button" id="btnSave" class="btn-primary">Save settings</button>
+      <a class="btn-secondary" href="/avatar.html" target="reactive-avatar">Open avatar</a>
+      <span id="saveStatus"></span>
+    </section>
+
+    <footer>
+      <p>In XSplit: <strong>Add source → Window Capture</strong> → select the Avatar app window.</p>
+      <p class="tiny">Allow microphone when prompted. Use Color Key on the green background for transparency.</p>
+    </footer>
+  </div>
+  <script src="settings.js?v=3"></script>
+</body>
+</html>
