@@ -16,7 +16,7 @@ No browser. No Electron.
 ## Run from source
 
 ```bat
-cd /d G:\fridge-reactive-image
+cd /d path\to\flavr-reactive-image
 python -m pip install -r requirements.txt
 python reactive_image.py
 ```
@@ -83,3 +83,5 @@ CLEAR
 Window Capture → **Reactive Avatar**. Optional Color Key on the green background.
 
 — Sensoka's Workshop
+
+Moved here from [flavr-leftovers](https://github.com/sensokasucks/flavr-leftovers) on 2026-10-09 with its git history. It runs on its own and never talked to Stream Core.

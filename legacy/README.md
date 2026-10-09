@@ -1,6 +1,6 @@
 # Reactive Image (Standalone) — legacy Node version
 
-> **Prefer the Python app:** `../fridge-reactive-image/`  
+> **Prefer the Python app:** the app in this repo's root folder  
 > This Node version is archived reference source only. `node_modules` was removed.
 
 Audio-reactive PNG avatar for **XSplit / OBS**.

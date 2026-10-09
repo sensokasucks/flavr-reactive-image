@@ -1,6 +1,6 @@
 # Checklist — Reactive Image
 
-Home: `fridge-reactive-image/` (`reactive_image.py`). Legacy Node app: `fridge-reactive-image-legacy/` (reference only).
+Home: this repo (`reactive_image.py`). Legacy Node app: `legacy/` (reference only).
 
 ## Must keep
 
@@ -24,4 +24,4 @@ Home: `fridge-reactive-image/` (`reactive_image.py`). Legacy Node app: `fridge-r
 ## After-change verify
 
 - [ ] README still lists custom states, HTTP :3851, serial, and `build.bat`.
-- [ ] Root README / Sources still mention port 3851.
+- [ ] README still says port 3851; Stream Core's Sources & overlays list still links `http://127.0.0.1:3851/status`.
