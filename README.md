@@ -85,3 +85,11 @@ Window Capture → **Reactive Avatar**. Optional Color Key on the green backgrou
 — Sensoka's Workshop
 
 Moved here from [flavr-leftovers](https://github.com/sensokasucks/flavr-leftovers) on 2026-10-09 with its git history. It runs on its own and never talked to Stream Core.
+
+## License
+
+Copyright (C) 2026 Sensoka (sensokasucks).
+
+This project is free software under the [GNU General Public License v3.0](LICENSE) (GPL-3.0). You can use it for free, including on monetized streams and other commercial use, change it, and share it. If you pass it on to anyone, changed or not, free or paid, you must give them the full source code under the same GPL-3.0 terms.
+
+Python packages installed from `requirements.txt` are not included in this repository and keep their own licenses.
