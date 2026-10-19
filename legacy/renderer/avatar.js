@@ -1,5 +1,10 @@
 /**
  * Avatar page – audio reactive engine + debug HUD
+ *
+ * ARCHIVED Node version (see legacy/README). Runs in renderer/avatar.html, the window
+ * captured in XSplit/OBS. Reads settings from GET /api/config (polled every 2.5 s), listens
+ * to the mic, picks one of the uploaded state images by loudness and crossfades between
+ * two <img> elements (imgA/imgB). Volume is 0..100; thresholds come from config.audio.
  */
 (() => {
   const imgA = document.getElementById('imgA');
@@ -32,6 +37,7 @@
   let wasSpeaking = false;
   let lastTier = 'idle';
 
+  // Pushes config.display/effects values into CSS variables used by avatar.html's styles.
   function applyDisplay() {
     if (!config) return;
     const bg = config.display?.backgroundColor || '#00FF00';
@@ -55,6 +61,7 @@
     return name ? '/uploads/' + name : null;
   }
 
+  // 0 at the speak threshold, 1 at the loud threshold or above.
   function volumeIntensity(vol) {
     const t = config?.audio?.threshold ?? 18;
     const loud = Math.max(t + 1, config?.audio?.loudThreshold ?? 45);
@@ -62,6 +69,9 @@
     return Math.min(1, (vol - t) / (loud - t));
   }
 
+  // Picks the image slot for this volume. Optional slots (soft, loud, blink, muted) are
+  // used only if an image was uploaded; otherwise it falls back to the nearest basic one.
+  // Keep the tier rules in sync with tierName() below.
   function resolveKey(vol, blinking, muted) {
     if (muted && imageUrl('muted')) return 'muted';
     const t = config?.audio?.threshold ?? 18;
@@ -81,6 +91,7 @@
     return imageUrl('speaking') || imageUrl('speakingSoft') || imageUrl('speakingLoud') || imageUrl('idle') || null;
   }
 
+  // Label shown in the HUD and sent to /api/debug: idle, soft, speak, loud, blink or muted.
   function tierName(vol, key) {
     if (key === 'muted') return 'muted';
     if (key === 'idleBlink' || key === 'speakingBlink') return 'blink';
@@ -95,6 +106,7 @@
     return 'speak';
   }
 
+  // Bounce height in px; grows from bounceStrength to bounceStrengthMax with volume if enabled.
   function bouncePxForVolume(vol) {
     const base = config?.effects?.bounceStrength ?? 12;
     const max = config?.effects?.bounceStrengthMax ?? 28;
@@ -114,6 +126,8 @@
     transitioning = false;
   }
 
+  // Crossfade to slot `key`: load it into the hidden <img>, then fade it in over the old one.
+  // The hidden image is decoded before showing so the swap does not flash blank.
   function showImage(key, force, volForBounce) {
     if (!key || (key === currentKey && !force)) return;
     const url = imageUrl(key);
@@ -133,6 +147,7 @@
       incoming.style.opacity = '0';
       incoming.style.zIndex = '2';
       outgoing.style.zIndex = '1';
+      // Reading offsetWidth forces a reflow so the class changes below restart the CSS transition.
       void incoming.offsetWidth;
 
       incoming.classList.add('visible');
@@ -165,6 +180,7 @@
         incoming.style.zIndex = '';
         transitioning = false;
       };
+      // Fallback in case transitionend never fires, so the swap always finishes.
       const safety = setTimeout(() => {
         incoming.removeEventListener('transitionend', onEnd);
         onEnd();
@@ -206,6 +222,7 @@
     showImage(key, force, smoothVol);
   }
 
+  // While speaking, lifts the image up to liveIntensityMax px in proportion to volume.
   function applyLiveIntensity(vol) {
     const active = activeIsA ? imgA : imgB;
     if (!config?.effects?.liveIntensity || !isSpeaking) {
@@ -216,6 +233,8 @@
     if (!active.classList.contains('bounce')) active.style.transform = `translateY(${y}px)`;
   }
 
+  // Updates the on-avatar HUD and posts the same numbers to the server so the
+  // settings page meter can show them (it polls GET /api/debug). Runs every frame.
   function updateHud(vol, key) {
     const tier = tierName(vol, key);
     hudTier.textContent = tier;
@@ -251,6 +270,7 @@
     }).catch(() => {});
   }
 
+  // Next blink at a random time between blinkMinInterval and blinkMaxInterval seconds.
   function scheduleBlink() {
     if (!config?.effects?.blinkEnabled) return;
     const min = (config.effects.blinkMinInterval || 2.5) * 1000;
@@ -276,6 +296,8 @@
     }
   }
 
+  // Opens the mic chosen in settings with browser processing off so the level is raw.
+  // Called again whenever the config changes, to switch device.
   async function startAudio() {
     try {
       if (micStream) micStream.getTracks().forEach((t) => t.stop());
@@ -302,6 +324,8 @@
     }
   }
 
+  // Per-frame loop: RMS level of the mic, scaled to 0..100 by sensitivity, then smoothed
+  // (config.audio.smoothing, 0..1, higher is slower). The image only changes when the tier does.
   function audioLoop(now) {
     if (!analyser || !dataArray) {
       requestAnimationFrame(audioLoop);
@@ -358,6 +382,7 @@
     await fetchConfig();
     updateVisual(true);
     await startAudio();
+    // No push channel from the server, so poll the config and redraw when it changes.
     setInterval(async () => {
       try {
         const prev = JSON.stringify(config);

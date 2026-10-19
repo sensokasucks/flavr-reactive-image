@@ -1,6 +1,11 @@
 /**
  * Reactive Image – pure Node server (no Electron)
  * Opens Edge/Chrome in --app mode for Window Capture in XSplit.
+ *
+ * ARCHIVED: reference only. reactive_image.py (repo root) replaced this; see legacy/README.
+ * Serves renderer/avatar.html (the captured avatar) and renderer/settings.html on
+ * 127.0.0.1:PORT (default 3850), stores settings in legacy/config.json and uploaded
+ * images in legacy/uploads/. Run with: node server.js
  */
 const http = require('http');
 const fs = require('fs');
@@ -16,6 +21,8 @@ const CONFIG_PATH = path.join(ROOT, 'config.json');
 
 if (!fs.existsSync(UPLOADS)) fs.mkdirSync(UPLOADS, { recursive: true });
 
+// Starting settings. loadConfig() and POST /api/config merge into these per section
+// (images, audio, effects, display), so new keys added here appear in old config files.
 const DEFAULT_CONFIG = {
   images: {
     idle: null,
@@ -59,6 +66,7 @@ const DEFAULT_CONFIG = {
   forceMuted: false
 };
 
+// Reads config.json over DEFAULT_CONFIG; falls back to a deep copy of the defaults on any error.
 function loadConfig() {
   try {
     if (fs.existsSync(CONFIG_PATH)) {
@@ -83,6 +91,8 @@ function saveConfig(cfg) {
 }
 
 let config = loadConfig();
+// Last audio/debug snapshot POSTed by the avatar page, read back by the settings page HUD.
+// Kept in memory only.
 let latestDebug = {
   vol: 0,
   tier: 'idle',
@@ -93,6 +103,7 @@ let latestDebug = {
   loudThreshold: 45
 };
 
+// Valid upload slot names, taken from DEFAULT_CONFIG.images (keep in sync with SLOT_META in settings.js).
 const IMAGE_SLOTS = Object.keys(DEFAULT_CONFIG.images);
 
 const MIME = {
@@ -107,6 +118,7 @@ const MIME = {
   '.webp': 'image/webp'
 };
 
+// Writes a response. Objects become JSON. Sends permissive CORS headers and no-store on every reply.
 function send(res, status, body, headers = {}) {
   const data = typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body);
   res.writeHead(status, {
@@ -120,6 +132,7 @@ function send(res, status, body, headers = {}) {
   res.end(data);
 }
 
+// Collects the whole request body as one Buffer.
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -144,6 +157,8 @@ function serveStatic(filePath, res) {
   fs.createReadStream(filePath).pipe(res);
 }
 
+// One handler for every route: /api/config, /api/debug, /api/upload, DELETE /api/image/<slot>,
+// /api/health, then the two pages, /uploads/<file> and the renderer's own js/css.
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://127.0.0.1:${PORT}`);
   const pathname = decodeURIComponent(url.pathname);
@@ -158,6 +173,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Merge, do not replace: the settings page may send only some sections.
   if (pathname === '/api/config' && req.method === 'POST') {
     try {
       const raw = await readBody(req);
@@ -194,6 +210,8 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Body: { slot, filename, data } where data is base64 file bytes (max 8 MB decoded).
+  // The file is saved as <timestamp>-<safe name> and the slot's previous file is deleted.
   if (pathname === '/api/upload' && req.method === 'POST') {
     try {
       const raw = await readBody(req);
@@ -260,6 +278,7 @@ const server = http.createServer(async (req, res) => {
     serveStatic(path.join(RENDERER, 'avatar.html'), res);
     return;
   }
+  // basename() strips any folder parts, so requests cannot escape uploads/.
   if (pathname.startsWith('/uploads/')) {
     serveStatic(path.join(UPLOADS, path.basename(pathname)), res);
     return;
@@ -274,6 +293,8 @@ const server = http.createServer(async (req, res) => {
   send(res, 404, 'Not found');
 });
 
+// Opens url in a chromeless browser window of width x height pixels so XSplit Window Capture
+// can grab it. Windows tries Edge, then Chrome, then the default browser.
 function openAppWindow(url, width, height) {
   const w = width || 520;
   const h = height || 560;

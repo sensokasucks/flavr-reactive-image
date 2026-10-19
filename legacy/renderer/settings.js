@@ -1,7 +1,16 @@
+/**
+ * Settings page – image slots, audio thresholds, effects and display options.
+ *
+ * ARCHIVED Node version (see legacy/README). Runs in renderer/settings.html, served by
+ * legacy/server.js. Saves through POST /api/config, uploads through POST /api/upload, and
+ * shows the avatar's live level by polling GET /api/debug every 200 ms.
+ */
 (() => {
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => [...document.querySelectorAll(s)];
 
+  // Image slots shown in the grid. ids must match DEFAULT_CONFIG.images in server.js;
+  // opt marks slots the avatar can do without (avatar.js falls back to idle/speaking).
   const SLOT_META = [
     { id: 'idle', label: 'Idle', opt: false },
     { id: 'speakingSoft', label: 'Soft speak', opt: true },
@@ -14,6 +23,8 @@
 
   let currentConfig = null;
 
+  // Builds one upload box per slot. Choosing a file uploads it straight away (no Save needed);
+  // Clear deletes the slot's file on the server.
   function buildSlots() {
     const root = $('#slots');
     if (!root) return;
@@ -66,6 +77,7 @@
     }
   }
 
+  // Copies a config object into the form controls; the fallbacks match server.js defaults.
   function applyToUI(cfg) {
     if (!cfg) return;
     const a = cfg.audio || {};
@@ -112,6 +124,7 @@
     }
   }
 
+  // Moves the speak/loud tick marks on the level meter (thresholds are 0..100 percent).
   function updateMarks() {
     const speak = $('#threshold');
     const loud = $('#loudThreshold');
@@ -136,6 +149,8 @@
     }
   }
 
+  // Sends the whole form as one config update. softRatio, sensitivity, bounceDuration and the
+  // blink timings have no controls, so fixed values are sent for them.
   async function saveSettings() {
     let bg = ($('#bgColorText').value || '#00FF00').trim();
     if (!/^#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$/.test(bg)) bg = $('#bgColor').value;
@@ -193,6 +208,7 @@
     }
   }
 
+  // Reads a file as a data URL and keeps only the base64 part, the format /api/upload expects.
   function fileToBase64(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -234,6 +250,8 @@
     }
   }
 
+  // Asks for mic permission once so enumerateDevices() returns real device names, then
+  // fills the device dropdown and reselects the saved device.
   async function listDevices() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -263,6 +281,7 @@
     }
   }
 
+  // Shows the avatar page's latest level, tier and image key (relayed through the server).
   async function pollDebug() {
     try {
       const res = await fetch('/api/debug');
