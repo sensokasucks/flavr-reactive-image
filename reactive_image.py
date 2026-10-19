@@ -2,6 +2,17 @@
 """
 Reactive Image – native Windows app for XSplit / OBS Window Capture.
 Audio-reactive PNG avatar + custom states (hotkeys) + tablet/Arduino control.
+
+One process, one file. Pieces (in file order):
+  config        config.json + uploads/ next to the script (or next to the .exe)
+  AudioEngine   mic level 0..100 from sounddevice (runs on the audio thread)
+  StateController  custom states: pynput hotkeys, HTTP control on :3851, USB serial
+  AvatarWindow  the "Reactive Avatar" window you Window-Capture (redrawn ~30 fps)
+  SettingsWindow  the scrollable settings window
+  App           creates everything and runs the tkinter main loop
+
+Image choice priority: hold > toggle > audio tier (idle / soft / speak / loud).
+Built into ReactiveImage.exe by build.bat; started from source by start.bat.
 """
 
 from __future__ import annotations
@@ -50,6 +61,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 def app_dir() -> Path:
+    """Folder for config.json and uploads/: next to the .exe when frozen, else next to this file."""
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent
@@ -60,6 +72,8 @@ CONFIG_PATH = DATA_DIR / "config.json"
 UPLOADS_DIR = DATA_DIR / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
+# Every setting with its default. Volumes and thresholds are on the 0..100 meter scale;
+# pixel values are screen px; *_s are seconds, *_ms milliseconds, opacities 0..1.
 DEFAULT_CONFIG: dict[str, Any] = {
     "images": {
         "idle": None,
@@ -79,6 +93,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "threshold": 18.0,
         "loud_threshold": 45.0,
         "soft_ratio": 0.45,
+        # smoothing 0..0.95: share of the previous level kept each audio block (higher = calmer).
+        # soft_ratio: where "soft" ends between threshold and loud_threshold (0..1).
         "smoothing": 0.55,
         "sensitivity": 1.0,
     },
@@ -121,6 +137,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
 
 
 def deep_merge(base: dict, override: dict) -> dict:
+    """Merge ``override`` into ``base``; nested dicts merge, other values replace."""
     out = dict(base)
     for k, v in (override or {}).items():
         if isinstance(v, dict) and isinstance(out.get(k), dict):
@@ -131,6 +148,7 @@ def deep_merge(base: dict, override: dict) -> dict:
 
 
 def load_config() -> dict:
+    """config.json merged over DEFAULT_CONFIG; a fresh copy of the defaults if missing or broken."""
     try:
         if CONFIG_PATH.exists():
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -145,6 +163,7 @@ def load_config() -> dict:
 
 
 def save_config(cfg: dict) -> None:
+    """Write the whole config dict to config.json (it replaces the file)."""
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
 
@@ -154,6 +173,8 @@ def save_config(cfg: dict) -> None:
 # ---------------------------------------------------------------------------
 
 class AudioEngine:
+    """Microphone level meter. ``volume`` is a smoothed 0..100 value read by the avatar window."""
+
     def __init__(self):
         self.volume = 0.0
         self._lock = threading.Lock()
@@ -176,6 +197,10 @@ class AudioEngine:
         return out
 
     def start(self, device=None, smoothing=0.55, sensitivity=1.0) -> bool:
+        """Open the input device (None = system default), mono 44.1 kHz in 1024-sample blocks.
+
+        Returns False if the mic cannot be opened.
+        """
         self.stop()
         if sd is None:
             return False
@@ -210,6 +235,8 @@ class AudioEngine:
             self._stream = None
 
     def _callback(self, indata, frames, time_info, status):
+        # Runs on sounddevice's audio thread for every block (~23 ms): RMS of the block,
+        # scaled so normal speech lands mid-meter, then exponential smoothing.
         if not self._running:
             return
         data = indata[:, 0] if indata.ndim > 1 else indata
@@ -230,6 +257,7 @@ class AudioEngine:
 # ---------------------------------------------------------------------------
 
 def load_pil(path: Optional[str]) -> Optional["Image.Image"]:
+    """Open an image by full path or by file name inside uploads/; None if missing or unreadable."""
     if not path or Image is None:
         return None
     p = Path(path)
@@ -250,6 +278,7 @@ def load_pil(path: Optional[str]) -> Optional["Image.Image"]:
 
 
 def fit_image(img: "Image.Image", max_w: int, max_h: int) -> "Image.Image":
+    """Shrink (never enlarge) to fit max_w x max_h, keeping the aspect ratio."""
     w, h = img.size
     if w <= 0 or h <= 0:
         return img
@@ -260,10 +289,16 @@ def fit_image(img: "Image.Image", max_w: int, max_h: int) -> "Image.Image":
     return img.resize((nw, nh), Image.Resampling.LANCZOS)
 
 
+# Image slots that count as "speaking" (for bounce and live intensity).
 SPEAKING_KEYS = {"speaking", "speakingSoft", "speakingLoud", "speakingBlink"}
 
 
 def resolve_audio_key(cfg: dict, volume: float, blinking: bool) -> Optional[str]:
+    """Which base image slot to show for this volume, falling back to whatever images exist.
+
+    Order: muted (if Force muted) -> below threshold: idle / idleBlink -> loud ->
+    soft (lower part of the speaking range, see soft_ratio) -> speakingBlink -> speaking.
+    """
     images = cfg.get("images") or {}
     audio = cfg.get("audio") or {}
     t = float(audio.get("threshold", 18))
@@ -294,6 +329,7 @@ def resolve_audio_key(cfg: dict, volume: float, blinking: bool) -> Optional[str]
 
 
 def tier_name(cfg: dict, volume: float, key: Optional[str]) -> str:
+    """Short label (idle / soft / speak / loud / blink / muted / custom id) for the HUD."""
     if key and key.startswith("custom:"):
         return key.split(":", 1)[-1]
     if key == "muted":
@@ -315,6 +351,7 @@ def tier_name(cfg: dict, volume: float, key: Optional[str]) -> str:
 
 
 def volume_intensity(cfg: dict, volume: float) -> float:
+    """0 at the speaking threshold up to 1 at the loud threshold."""
     audio = cfg.get("audio") or {}
     t = float(audio.get("threshold", 18))
     loud = max(t + 1.0, float(audio.get("loud_threshold", 45)))
@@ -339,6 +376,8 @@ class StateController:
         self.app = app
         self._lock = threading.Lock()
         self.held: list[str] = []          # state ids, last pressed on top
+        # toggle_id: the one toggled-on state (None = none). Hotkey, HTTP and serial
+        # threads all change held / toggle_id, so every change takes _lock.
         self.toggle_id: Optional[str] = None
         self._listener = None
         self._http = None
@@ -349,6 +388,7 @@ class StateController:
         self._pressed_keys: set = set()
 
     def custom_by_id(self, sid: str) -> Optional[dict]:
+        """The enabled custom state with this id, from the current config."""
         for s in self.app.cfg.get("custom_states") or []:
             if s.get("id") == sid and s.get("enabled", True):
                 return s
@@ -403,6 +443,8 @@ class StateController:
 
     def apply_command(self, line: str):
         """Parse serial/HTTP style commands."""
+        # Commands: HOLD|PRESS id, RELEASE|UP id, TOGGLE|SET id, ON|STATE id (force on),
+        # CLEAR|OFF|RESET. Case-insensitive command word.
         line = (line or "").strip()
         if not line:
             return
@@ -427,6 +469,7 @@ class StateController:
 
     # --- hotkeys ---
     def _parse_hotkey(self, name: str):
+        """Turn a config hotkey ("f20", "space", "2", "a") into a pynput key; None if unknown."""
         if pynput_kb is None or not name:
             return None
         n = name.strip().lower()
@@ -462,6 +505,11 @@ class StateController:
         return False
 
     def restart_hotkeys(self):
+        """(Re)start the global keyboard listener for every enabled state that has a hotkey.
+
+        pynput callbacks run on the listener's own thread. _pressed_keys ignores the
+        key-repeat presses Windows sends while a key is held down.
+        """
         self.stop_hotkeys()
         if pynput_kb is None:
             return
@@ -516,6 +564,12 @@ class StateController:
 
     # --- HTTP control (Android tablet / ESP) ---
     def restart_http(self):
+        """(Re)start the HTTP control server (GET only) on control.http_port, default 3851.
+
+        Binds 127.0.0.1 unless control.http_lan (then 0.0.0.0 for tablets / ESP boards).
+        Runs serve_forever on a daemon thread. Routes: /status (JSON), /hold/<id>,
+        /release/<id>, /toggle/<id>, /on/<id>, /clear, /help; the id may also be ?id=.
+        """
         self.stop_http()
         ctrl = self.app.cfg.get("control") or {}
         if not ctrl.get("http_enabled", True):
@@ -614,6 +668,7 @@ class StateController:
 
     # --- Serial (USB Arduino) ---
     def restart_serial(self):
+        """(Re)open the USB serial port and read newline-terminated commands on a daemon thread."""
         self.stop_serial()
         if serial is None:
             return
@@ -659,6 +714,7 @@ class StateController:
                 pass
             self._serial = None
 
+    # Called at start-up and after every settings change (App.on_config_changed).
     def restart_all(self):
         self.restart_hotkeys()
         self.restart_http()
@@ -675,6 +731,9 @@ class StateController:
 # ---------------------------------------------------------------------------
 
 class AvatarWindow:
+    """The capture window: draws the chosen image centred on a solid background color
+    (for chroma key), with bounce / live-intensity offsets and an optional debug HUD."""
+
     def __init__(self, root: tk.Tk, app: "App"):
         self.app = app
         self.cfg = app.cfg
@@ -714,6 +773,7 @@ class AvatarWindow:
         self.app.quit_app()
 
     def apply_display(self):
+        """Apply background / always-on-top / HUD settings and drop cached images."""
         disp = self.cfg["display"]
         bg = disp.get("background_color", "#00FF00")
         self.win.configure(bg=bg)
@@ -730,6 +790,7 @@ class AvatarWindow:
         self._current_key = None
 
     def _get_pil(self, key: str) -> Optional[Image.Image]:
+        """Original (unscaled) image for a slot key or "custom:<id>", cached per key."""
         if key in self._pil_cache:
             return self._pil_cache[key]
         name = None
@@ -751,6 +812,7 @@ class AvatarWindow:
         return img
 
     def _tick(self):
+        # Redraw about every 33 ms (~30 fps) on the tkinter thread.
         try:
             self._update_frame()
         except Exception as e:
@@ -758,6 +820,7 @@ class AvatarWindow:
         self.win.after(33, self._tick)
 
     def _update_frame(self):
+        """Pick the image (override or audio tier), work out blink and bounce, and redraw."""
         cfg = self.cfg
         vol = self.app.audio.get_volume()
         now = time.time()
@@ -787,6 +850,8 @@ class AvatarWindow:
         tier = tier_name(cfg, vol, key)
         speaking = (key in SPEAKING_KEYS) if key else False
 
+        # Bounce once when speaking starts: a 0.28 s up-and-settle hop. Its height is
+        # bounce_strength px, growing toward bounce_strength_max with volume.
         if efx.get("bounce") and speaking and not self._was_speaking:
             intensity = volume_intensity(cfg, vol)
             base = float(efx.get("bounce_strength", 12))
@@ -839,6 +904,7 @@ class AvatarWindow:
                 lines.append("blink")
             self.hud_var.set("\n".join(lines))
 
+        # Read by SettingsWindow._poll_debug for the "Live state" box.
         self.app.debug_state = {
             "vol": round(vol, 1),
             "tier": tier,
@@ -855,6 +921,7 @@ class AvatarWindow:
 # Settings (scrollable)
 # ---------------------------------------------------------------------------
 
+# Base image slots (config "images" keys) and their labels in Settings.
 SLOT_LABELS = [
     ("idle", "Idle"),
     ("speakingSoft", "Soft speak (opt)"),
@@ -867,6 +934,8 @@ SLOT_LABELS = [
 
 
 class SettingsWindow:
+    """Scrollable settings window. Closing it only hides it; closing the avatar quits."""
+
     def __init__(self, root: tk.Tk, app: "App"):
         self.app = app
         self.cfg = app.cfg
@@ -883,6 +952,8 @@ class SettingsWindow:
             pass
 
         # ---- scrollable shell ----
+        # tkinter frames cannot scroll, so the form lives in a frame inside a Canvas
+        # with a scrollbar; the frame's size sets the canvas scroll region.
         shell = ttk.Frame(self.win)
         shell.pack(fill=tk.BOTH, expand=True)
         self.canvas = tk.Canvas(shell, highlightthickness=0)
@@ -1095,6 +1166,7 @@ class SettingsWindow:
             self._add_custom_row(st)
 
     def _add_custom_row(self, st: dict):
+        """One editable row (enabled, name, trigger, hotkey, image) for a custom state."""
         row = ttk.Frame(self.custom_list)
         row.pack(fill=tk.X, pady=3)
         enabled = tk.BooleanVar(value=st.get("enabled", True))
@@ -1122,6 +1194,7 @@ class SettingsWindow:
                 return
             from shutil import copy2
             ext = Path(path).suffix.lower() or ".png"
+            # Images are copied into uploads/ so the config keeps working if the original moves.
             dest_name = f"custom_{sid}{ext}"
             copy2(path, UPLOADS_DIR / dest_name)
             st["image"] = dest_name
@@ -1148,6 +1221,7 @@ class SettingsWindow:
         })
 
     def add_custom_state(self):
+        """Add a new, empty toggle state with a random id like "s_a1b2c3" and save at once."""
         sid = "s_" + str(uuid.uuid4())[:6]
         st = {"id": sid, "name": "New state", "image": None, "trigger": "toggle", "hotkey": "", "enabled": True}
         self.cfg.setdefault("custom_states", []).append(st)
@@ -1156,6 +1230,7 @@ class SettingsWindow:
         self.app.on_config_changed()
 
     def _collect_custom_states(self) -> list:
+        """Read the custom state rows back into config dicts (hotkeys lowercased)."""
         out = []
         for row in self._custom_rows:
             st = dict(row["st"])
@@ -1168,6 +1243,7 @@ class SettingsWindow:
         return out
 
     def load_into_ui(self):
+        """Copy the current config into every widget."""
         cfg = self.cfg
         a, e, d, c = cfg["audio"], cfg["effects"], cfg["display"], cfg.get("control") or {}
         self.thresh_var.set(a.get("threshold", 18))
@@ -1276,6 +1352,10 @@ class SettingsWindow:
             self.bg_var.set(c[1])
 
     def save(self):
+        """Write every widget back into the config, save config.json and apply it.
+
+        ``control`` is merged, so keys without a widget (allow_cross_site) are kept.
+        """
         dev_sel = self.device_combo.current()
         device = None
         if dev_sel > 0:
@@ -1319,6 +1399,7 @@ class SettingsWindow:
         self.win.after(2000, lambda: self.status.config(text=""))
 
     def _poll_debug(self):
+        # Refresh the Live state box every 100 ms from App.debug_state.
         st = self.app.debug_state
         if st:
             self.dbg_tier.config(text=str(st.get("tier", "idle")).upper())
@@ -1339,6 +1420,8 @@ class SettingsWindow:
 # ---------------------------------------------------------------------------
 
 class App:
+    """Owns config, audio, controller and both windows. The hidden Tk root runs the main loop."""
+
     def __init__(self):
         if Image is None:
             messagebox.showerror("Missing dependency", "Pillow is required.\n\npip install Pillow sounddevice numpy pynput")
@@ -1373,6 +1456,7 @@ class App:
             messagebox.showwarning("Microphone", "Could not open the microphone.\nCheck the device in Settings.")
 
     def on_config_changed(self):
+        """Reload config.json and restart audio, hotkeys, HTTP and serial with it."""
         self.cfg = load_config()
         self.avatar.cfg = self.cfg
         self.settings.cfg = self.cfg
@@ -1388,6 +1472,7 @@ class App:
             pass
 
     def quit_app(self):
+        """Stop listeners and audio, then exit the whole process."""
         self.controller.stop_all()
         self.audio.stop()
         try:
