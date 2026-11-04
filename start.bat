@@ -1,5 +1,5 @@
 @echo off
-REM Fridge Reactive Image – run from source (no exe needed)
+REM Fridge Reactive Image - run from source (no exe needed)
 setlocal
 cd /d "%~dp0"
 if not exist "reactive_image.py" (
