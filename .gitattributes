@@ -1,0 +1,9 @@
+# .gitattributes - tells git how to store and check out files.
+#
+# Windows batch files MUST have Windows (CRLF) line endings. With Unix (LF)
+# endings cmd.exe loses track of where lines start, chops words in half and
+# reports things like "'le-click' is not recognized as a command".
+# These rules make git write CRLF into .bat/.cmd files on every checkout and
+# in GitHub's "Download ZIP", whatever editor or OS last saved them.
+*.bat text eol=crlf
+*.cmd text eol=crlf
